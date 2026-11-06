@@ -271,17 +271,18 @@ class _ToolsPageState extends State<ToolsPage> {
     await prefs.setString('store_packages', jsonEncode(packages));
   }
 
-  Future<void> addPackage() async {
-    final title = TextEditingController();
-    final titleId = TextEditingController();
-    final version = TextEditingController(text: '1.0');
-    final size = TextEditingController();
-    final url = TextEditingController();
+  Future<void> addPackage({int? editIndex}) async {
+    final existing = editIndex == null ? <String, dynamic>{} : packages[editIndex];
+    final title = TextEditingController(text: existing['title'] ?? '');
+    final titleId = TextEditingController(text: existing['titleId'] ?? '');
+    final version = TextEditingController(text: existing['version'] ?? '1.0');
+    final size = TextEditingController(text: existing['size'] ?? '');
+    final url = TextEditingController(text: existing['url'] ?? '');
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Add package'),
+        title: Text(editIndex == null ? 'Add package' : 'Edit package'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -310,16 +311,28 @@ class _ToolsPageState extends State<ToolsPage> {
                 'url': url.text.trim(),
               });
             },
-            child: const Text('Add'),
+            child: Text(editIndex == null ? 'Add' : 'Save'),
           ),
         ],
       ),
     );
 
     if (result != null) {
-      setState(() => packages.add(result));
+      setState(() {
+        if (editIndex == null) {
+          packages.add(result);
+        } else {
+          packages[editIndex] = result;
+        }
+      });
       await saveStore();
     }
+
+    title.dispose();
+    titleId.dispose();
+    version.dispose();
+    size.dispose();
+    url.dispose();
   }
 
   Widget _field(TextEditingController controller, String label) {
@@ -412,12 +425,21 @@ class _ToolsPageState extends State<ToolsPage> {
               subtitle: Text(
                 '${item['titleId']} • v${item['version']} • ${item['size']}',
               ),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                onPressed: () async {
-                  setState(() => packages.removeAt(index));
-                  await saveStore();
-                },
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, color: blue),
+                    onPressed: () => addPackage(editIndex: index),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    onPressed: () async {
+                      setState(() => packages.removeAt(index));
+                      await saveStore();
+                    },
+                  ),
+                ],
               ),
             ),
           );
