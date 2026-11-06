@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
@@ -348,6 +349,45 @@ class _ToolsPageState extends State<ToolsPage> {
     );
   }
 
+  Future<void> importJson() async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        withData: true,
+      );
+      if (picked == null) return;
+      final bytes = picked.files.single.bytes;
+      if (bytes == null) throw Exception('Could not read file');
+      final data = jsonDecode(utf8.decode(bytes));
+      if (data is! Map || data['format'] != 'GAMIRO Store' ||
+          data['packages'] is! List) {
+        throw Exception('Invalid GAMIRO Store JSON');
+      }
+      final imported = List<Map<String, dynamic>>.from(
+        (data['packages'] as List).map((e) => Map<String, dynamic>.from(e)),
+      );
+      setState(() {
+        packages = imported;
+        if (data['storeName'] is String) {
+          storeController.text = data['storeName'];
+        }
+      });
+      await saveStore();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Imported ${packages.length} packages')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Import failed: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> exportJson() async {
     final catalog = {
       'format': 'GAMIRO Store',
@@ -449,6 +489,12 @@ class _ToolsPageState extends State<ToolsPage> {
           onPressed: addPackage,
           icon: const Icon(Icons.add),
           label: const Text('Add package'),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: importJson,
+          icon: const Icon(Icons.file_open),
+          label: const Text('Import store JSON'),
         ),
         const SizedBox(height: 10),
         OutlinedButton.icon(
