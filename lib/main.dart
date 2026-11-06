@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 
 void main() => runApp(const GamiroApp());
@@ -233,15 +236,213 @@ class PlatformTile extends StatelessWidget {
   );
 }
 
-class ToolsPage extends StatelessWidget {
+
+class ToolsPage extends StatefulWidget {
   const ToolsPage({super.key});
 
   @override
-  Widget build(BuildContext context) => const EmptyPage(
-    icon: Icons.build_circle_outlined,
-    title: 'GAMIRO Tools',
-    message: 'Store designer, package manager, and build tools are planned here.',
-  );
+  State<ToolsPage> createState() => _ToolsPageState();
+}
+
+class _ToolsPageState extends State<ToolsPage> {
+  final storeController = TextEditingController(text: 'My GAMIRO Store');
+  List<Map<String, dynamic>> packages = [];
+  bool loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    loadStore();
+  }
+
+  Future<void> loadStore() async {
+    final prefs = await SharedPreferences.getInstance();
+    storeController.text = prefs.getString('store_name') ?? 'My GAMIRO Store';
+    final data = prefs.getString('store_packages');
+    if (data != null) {
+      packages = List<Map<String, dynamic>>.from(jsonDecode(data));
+    }
+    if (mounted) setState(() => loading = false);
+  }
+
+  Future<void> saveStore() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('store_name', storeController.text);
+    await prefs.setString('store_packages', jsonEncode(packages));
+  }
+
+  Future<void> addPackage() async {
+    final title = TextEditingController();
+    final titleId = TextEditingController();
+    final version = TextEditingController(text: '1.0');
+    final size = TextEditingController();
+    final url = TextEditingController();
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add package'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _field(title, 'Package title'),
+              _field(titleId, 'Title ID'),
+              _field(version, 'Version'),
+              _field(size, 'Size (e.g. 500 MB)'),
+              _field(url, 'Authorized package URL'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (title.text.trim().isEmpty || url.text.trim().isEmpty) return;
+              Navigator.pop(context, {
+                'title': title.text.trim(),
+                'titleId': titleId.text.trim(),
+                'version': version.text.trim(),
+                'size': size.text.trim(),
+                'url': url.text.trim(),
+              });
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      setState(() => packages.add(result));
+      await saveStore();
+    }
+  }
+
+  Widget _field(TextEditingController controller, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+        ),
+      ),
+    );
+  }
+
+  Future<void> exportJson() async {
+    final catalog = {
+      'format': 'GAMIRO Store',
+      'version': 1,
+      'storeName': storeController.text,
+      'packages': packages,
+    };
+    await Clipboard.setData(
+      ClipboardData(text: const JsonEncoder.withIndent('  ').convert(catalog)),
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Store JSON copied to clipboard')),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    storeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) return const Center(child: CircularProgressIndicator());
+
+    return ListView(
+      padding: const EdgeInsets.all(18),
+      children: [
+        const Text('STORE BUILDER',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        const Text('Create and manage your own package catalog',
+            style: TextStyle(color: Colors.white60)),
+        const SizedBox(height: 20),
+        TextField(
+          controller: storeController,
+          onChanged: (_) => saveStore(),
+          decoration: const InputDecoration(
+            labelText: 'Store name',
+            prefixIcon: Icon(Icons.storefront),
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            const Expanded(
+              child: Text('PACKAGE ENTRIES',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            Text('${packages.length} items',
+                style: const TextStyle(color: Colors.white60)),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (packages.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(
+                child: Text('No packages yet. Add your first entry.',
+                    style: TextStyle(color: Colors.white60)),
+              ),
+            ),
+          ),
+        ...packages.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value;
+          return Card(
+            child: ListTile(
+              leading: const Icon(Icons.inventory_2, color: blue),
+              title: Text(item['title'] ?? 'Untitled'),
+              subtitle: Text(
+                '${item['titleId']} • v${item['version']} • ${item['size']}',
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                onPressed: () async {
+                  setState(() => packages.removeAt(index));
+                  await saveStore();
+                },
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 14),
+        FilledButton.icon(
+          onPressed: addPackage,
+          icon: const Icon(Icons.add),
+          label: const Text('Add package'),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: exportJson,
+          icon: const Icon(Icons.code),
+          label: const Text('Export store JSON'),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Only add packages you own or are authorized to distribute.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.white38, fontSize: 11),
+        ),
+      ],
+    );
+  }
 }
 
 class EmptyPage extends StatelessWidget {
